@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sevkit — sunucuya deploy, geri alması hazır</title>
+<meta name="description" content="Sevkit, kendi sunucunuzda çalışan dağıtım aracı. CI'ın ürettiği paketi Windows (IIS, servis) ve Linux sunucularına elle uğraşmadan kurar: önce tek sunucuda dener, siz onaylayınca yayar, sağlık kontrolü düşerse eski sürüme döner. Kişisel kullanım için ücretsiz.">
+<!-- Deneme 3a: sinematik açılış. Kamera geniş plandan kuryeye yaklaşır, kaydırdıkça sahnede gezer
+     (depo → yol → kapı → geri dönüş), sonra sert kesmeyle ürün ekranına geçer.
+     Piksel sanat yalnız dağıtım sahnesinde (canvas); sayfanın geri kalanı vektör ve Manrope.
+     İndirme bağlantıları yer tutucu (#): depo özel, yayın dosyaları henüz bir indirme adresine konmadı. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23121214'/%3E%3Cpath d='M8 13l12-5v4l-8 3.5 9 4-13 5.5v-4l7-3-8-3.5z' fill='%23ff8833'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#121214; --surface:#18181b; --raised:#202025; --line:#2c2c33; --line-soft:#232328;
+  --text:#e8e5df; --muted:#948f86; --dim:#5d5a54;
+  --acc:#ff8833; --acc2:#ffa75e; --on-acc:#2a1200; --acc-text:#ff8833;
+  --ok:#5fcf8a; --err:#ff5c7a; --rb:#c084fc; --courier:#3d5ce0;
+  --ease-out:cubic-bezier(.23,1,.32,1);
+  --shell:1090px;
+  color-scheme:dark;
+}
+html[data-theme="light"]{
+  --bg:#eeeef0; --surface:#ffffff; --raised:#f7f7f8; --line:#d8d8dc; --line-soft:#e6e6ea;
+  --text:#1d1c1a; --muted:#5f5b54; --dim:#8d8880;
+  --acc:#f07a22; --acc2:#f58f42; --acc-text:#b4530b;
+  --ok:#1b8a4b; --err:#cc2c50; --rb:#8043d4; --courier:#3553d4;
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%; scroll-behavior:auto}
+body{margin:0; background:var(--bg); color:var(--text); font-family:Manrope,system-ui,sans-serif;
+  font-size:16px; line-height:1.62; letter-spacing:-.005em; overflow-x:hidden}
+h1,h2,h3{margin:0; font-weight:700; letter-spacing:-.034em; line-height:1.1}
+p{margin:0} ul,ol,dl{margin:0;padding:0;list-style:none} dd{margin:0}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--acc); outline-offset:3px; border-radius:3px}
+[tabindex="-1"]:focus,[tabindex="-1"]:focus-visible{outline:none}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace; letter-spacing:0}
+.skip{position:absolute; left:-9999px; background:var(--acc); color:var(--on-acc); padding:10px 16px; font-weight:700; z-index:99}
+.skip:focus{left:8px; top:8px}
+.shell{width:min(100% - 36px,var(--shell)); margin-inline:auto}
+
+/* ---------- üst çubuk ---------- */
+.nav{position:fixed; left:0; right:0; top:0; z-index:40; transition:background-color .3s ease, border-color .3s ease}
+.nav[data-solid="1"]{background:color-mix(in srgb,var(--bg) 84%,transparent); backdrop-filter:blur(14px); border-bottom:1px solid var(--line-soft)}
+.nav__in{display:flex; align-items:center; gap:18px; height:56px}
+.brand{display:flex; align-items:center; gap:9px; text-decoration:none; font-weight:800; letter-spacing:-.03em; font-size:16.5px}
+.brand svg{width:25px; height:25px; display:block; border-radius:6px}
+.nav__links{display:none; gap:20px; margin-left:auto; font-size:14px; color:var(--muted)}
+@media (min-width:840px){ .nav__links{display:flex} }
+.nav__links a{position:relative; text-decoration:none; padding-bottom:4px; transition:color .18s ease}
+.nav__links a[aria-current]{color:var(--text)}
+.nav__links a[aria-current]::after{content:""; position:absolute; left:0; right:0; bottom:0; height:1.5px; background:var(--acc)}
+@media (hover:hover) and (pointer:fine){ .nav__links a:hover{color:var(--text)} }
+.themebtn{margin-left:auto; border:1px solid var(--line); background:color-mix(in srgb,var(--bg) 55%,transparent);
+  color:var(--muted); cursor:pointer; font-family:"JetBrains Mono",monospace; font-size:12px; padding:6px 11px;
+  border-radius:999px; transition:color .18s ease, border-color .18s ease}
+@media (min-width:840px){ .themebtn{margin-left:0} }
+@media (hover:hover) and (pointer:fine){ .themebtn:hover{color:var(--text); border-color:var(--acc)} }
+
+/* ---------- sinema sahnesi ---------- */
+.cinewrap{position:relative}
+html.cin .cinewrap{height:420svh}
+.cine{position:relative; overflow:hidden; background:var(--bg); padding-top:56px}
+html.cin .cine{padding-top:0}
+html.cin .cine{position:sticky; top:0; height:100svh}
+.stage{position:relative; width:100%; height:clamp(280px,46svh,460px); overflow:hidden}
+html.cin .stage{position:absolute; inset:0; height:auto}
+.stage canvas{position:absolute; inset:0; width:100%; height:100%; display:block; image-rendering:pixelated}
+.scrim{position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(to top, var(--bg) 0%, color-mix(in srgb,var(--bg) 72%,transparent) 26%, transparent 58%)}
+html.cin .scrim{background:linear-gradient(to top, color-mix(in srgb,var(--bg) 94%,transparent) 0%, color-mix(in srgb,var(--bg) 58%,transparent) 30%, transparent 62%)}
+/* ikinci perde: yalnız kahraman metni ekrandayken, altındaki sahneyi bastırır */
+.scrim2{position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(to top, var(--bg) 0%, color-mix(in srgb,var(--bg) 90%,transparent) 32%,
+    color-mix(in srgb,var(--bg) 46%,transparent) 54%, transparent 72%)}
+
+/* kapı etiketleri: piksel değil, JetBrains Mono */
+.labels{position:absolute; inset:0; pointer-events:none; overflow:hidden}
+.lab{position:absolute; left:0; top:0; white-space:nowrap; text-align:center;
+  font-family:"JetBrains Mono",monospace; font-size:11px; line-height:1.35; color:var(--dim);
+  transition:opacity .35s var(--ease-out), color .35s var(--ease-out)}
+.lab b{display:block; font-weight:500; color:var(--muted); font-size:11.5px}
+.lab s{display:block; text-decoration:none}
+.lab[data-st="ok"] b{color:var(--ok)} .lab[data-st="rb"] b{color:var(--rb)}
+.lab[data-st="run"] b{color:var(--acc-text)} .lab[data-st="err"] b{color:var(--err)}
+@media (max-width:640px){ .lab{font-size:9.5px} .lab b{font-size:10px} .lab s{display:none} }
+.labels[data-wide="1"] .lab s{display:none}
+
+/* perde */
+.bar{position:absolute; left:0; right:0; height:50%; background:#000; z-index:6; pointer-events:none;
+  will-change:transform}
+html[data-theme="light"] .bar{background:var(--bg)}
+.bar--t{top:0; transform:translate3d(0,-100%,0)}
+/* menü yolculuğunun perdesi: nav'ın altında kalır, toplam 425 ms */
+.wipe{position:fixed; inset:0; z-index:35; pointer-events:none; visibility:hidden}
+.wipe.on{visibility:visible}
+.wipe i{position:absolute; left:0; right:0; height:51%; background:#000; will-change:transform}
+html[data-theme="light"] .wipe i{background:var(--bg)}
+.wipe i:first-child{top:0; transform:translate3d(0,-100%,0)}
+.wipe i:last-child{bottom:0; transform:translate3d(0,100%,0)}
+.wipe.close i{transform:translate3d(0,0,0); transition:transform .2s cubic-bezier(.23,1,.32,1)}
+.wipe.open i{transition:transform .225s cubic-bezier(.23,1,.32,1)}
+.bar--b{bottom:0; transform:translate3d(0,100%,0)}
+
+/* kahraman metni */
+.hero{position:relative; z-index:4; padding:22px 0 clamp(26px,6svh,54px)}
+html.cin .hero{position:absolute; left:0; right:0; bottom:0; padding-bottom:calc(9svh + 12px); will-change:transform,opacity}
+.hero .shell{display:flex; flex-direction:column; gap:16px; align-items:flex-start}
+h1{font-size:clamp(1.7rem,4.8vw,3.4rem); font-weight:800; letter-spacing:-.044em; line-height:1.06}
+.ln{display:block; overflow:hidden}
+.ln i{display:block; font-style:normal}
+.sub{color:var(--muted); font-weight:300; max-width:50ch; font-size:clamp(1rem,1.6vw,1.14rem)}
+.sub b{color:var(--text); font-weight:500}
+.cta{display:flex; flex-wrap:wrap; gap:10px; margin-top:2px}
+/* kahramanın altındaki vurgu şeridi: üç tek satırlık söz, sonuncusu ayrıştırıcı */
+.edge{display:flex; flex-wrap:wrap; gap:7px 20px; margin-top:4px}
+.edge li{padding-left:11px; border-left:1px solid var(--line); font-size:13.5px; font-weight:400;
+  line-height:1.35; color:var(--muted)}
+.edge li[data-key]{color:var(--text)}
+.edge .tag{display:inline-block; margin-right:8px; padding:2px 7px 3px; border-radius:4px;
+  background:var(--acc); color:var(--on-acc); font-size:10.5px; font-weight:700; letter-spacing:.015em; line-height:1.25}
+@media (max-width:760px){ .edge{flex-direction:column; gap:5px} .edge li{font-size:12.5px} }
+/* dar ekranda rozet üst etikete döner, cümle tek satırda kalır */
+@media (max-width:520px){ .edge li[data-key]{padding-top:1px} .edge .tag{display:block; width:max-content; margin:0 0 3px} }
+.btn{display:inline-flex; align-items:center; gap:8px; padding:12px 20px; border-radius:8px; text-decoration:none;
+  font-weight:700; font-size:14.5px; border:1px solid transparent; cursor:pointer; font-family:inherit;
+  transition:background-color .18s ease, border-color .18s ease, color .18s ease, transform .12s var(--ease-out)}
+.btn--p{background:var(--acc); color:var(--on-acc)}
+.btn--s{border-color:var(--line); color:var(--text); background:color-mix(in srgb,var(--surface) 70%,transparent)}
+@media (hover:hover) and (pointer:fine){
+  .btn--p:hover{background:var(--acc2)} .btn--s:hover{border-color:var(--acc); color:var(--acc-text)}
+}
+.btn:active{transform:translateY(1px)}
+
+/* bölüm rayı ve anlatım satırı: yalnız sinematik modda */
+.rail,.narr,.hint{display:none}
+html.cin .narr{display:block; position:absolute; z-index:4; left:0; right:0; bottom:calc(9svh + 14px);
+  pointer-events:none; opacity:0; will-change:opacity}
+.narr .shell{font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--acc-text)}
+html.cin .rail{display:block; position:absolute; z-index:4; left:max(18px,calc(50vw - var(--shell)/2)); top:27%;
+  transform:translateY(-50%); opacity:0; will-change:opacity}
+.rail li{display:flex; align-items:center; gap:10px; padding:5px 0; font-size:12.5px; font-weight:600;
+  letter-spacing:.01em; color:var(--dim); transition:color .3s var(--ease-out)}
+.rail li::before{content:""; width:18px; height:1px; background:currentColor; transition:width .3s var(--ease-out)}
+.rail li[data-on="1"]{color:var(--acc-text)}
+.rail li[data-on="1"]::before{width:30px}
+@media (max-width:899px){
+  html.cin .rail{left:18px; right:18px; top:auto; bottom:calc(9svh + 40px); transform:none}
+  .rail ol{display:flex; gap:16px}
+  .rail li::before{display:none}
+  .rail li{font-size:11px}
+}
+html.cin .hint{display:block; position:absolute; z-index:4; right:max(18px,calc(50vw - var(--shell)/2));
+  bottom:calc(9svh + 14px); font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--dim);
+  pointer-events:none; opacity:0; will-change:opacity}
+@media (max-width:899px){ html.cin .hint{display:none} }
+
+/* ---------- kesme: ürün ekranı ---------- */
+.cut{position:relative; z-index:7; background:var(--bg); border-top:1px solid var(--line-soft)}
+html.cin .cut{margin-top:-100svh; border-top:0}
+.cutin{padding:76px 0}
+html.cin .cutin{position:sticky; top:0; min-height:100svh; display:flex; align-items:center; padding:86px 0 40px}
+.cutgrid{display:grid; gap:34px; min-width:0}
+.cutgrid > *{min-width:0}
+@media (min-width:980px){ .cutgrid{grid-template-columns:minmax(0,340px) minmax(0,1fr); gap:56px; align-items:center} }
+.cuttxt h2{font-size:clamp(1.45rem,2.9vw,2.05rem); font-weight:800; letter-spacing:-.04em; max-width:15ch}
+.cuttxt p{margin-top:16px; color:var(--muted); font-weight:300; max-width:44ch; font-size:.99rem}
+.cuttxt b{color:var(--text); font-weight:500}
+.sevki{margin-top:24px; padding-top:14px; border-top:1px solid var(--line-soft)}
+/* dipnot: gövdeden geri çekilmiş, eğik; yıldız yalnız görsel, ekran okuyucuya "Not:" gider */
+.fn{font-style:italic; font-weight:300; font-size:.86rem; line-height:1.55; color:var(--dim); max-width:52ch}
+.fn .st{font-style:normal; margin-right:.4em}
+.cuttxt .fn{margin-top:0; font-size:.86rem; color:var(--dim)}
+.cuttxt .fn + .fn{margin-top:5px}
+.sr{position:absolute; left:-9999px}
+
+/* ürün arayüzü: vektör */
+.ui{border:1px solid var(--line); border-radius:12px; background:var(--surface); overflow:hidden;
+  box-shadow:0 26px 60px -34px rgba(0,0,0,.85)}
+.ui__top{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--line-soft);
+  background:var(--raised); font-size:13px}
+.ui__top b{font-weight:700; letter-spacing:-.02em}
+.ui__top .mono{font-size:11.5px; color:var(--muted)}
+.ui__top .push{margin-left:auto}
+.dot{width:7px; height:7px; border-radius:50%; background:var(--rb); flex:none}
+.grid7{display:grid; grid-template-columns:repeat(7,1fr); gap:4px}
+.ui__steps{display:none; padding:10px 16px 0; font-size:9.5px; color:var(--dim)}
+@media (min-width:560px){ .ui__steps{display:grid} }
+.ui__steps span{text-align:center; overflow:hidden; text-overflow:ellipsis}
+.rows{padding:10px 16px 14px}
+.row{position:relative; display:grid; grid-template-columns:1fr; gap:6px; padding:11px 0; border-bottom:1px solid var(--line-soft)}
+@media (min-width:560px){ .row{grid-template-columns:104px minmax(0,1fr) 128px; gap:14px; align-items:center} }
+.row:last-child{border-bottom:0}
+.row__n{font-family:"JetBrains Mono",monospace; font-size:12px; font-weight:500; display:flex; align-items:baseline; gap:7px}
+.row__n em{font-style:normal; font-size:10px; color:var(--acc-text); font-weight:400}
+.seg{height:5px; border-radius:2px; background:var(--line)}
+.seg[data-s="ok"]{background:var(--ok)}
+.seg[data-s="err"]{background:var(--err)}
+.seg[data-s="rb"]{background:var(--rb)}
+.row__s{font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--muted); text-align:left}
+@media (min-width:560px){ .row__s{text-align:right} }
+.row[data-st="ok"] .row__s{color:var(--ok)}
+.row[data-st="rb"] .row__s{color:var(--rb)}
+.seal{position:absolute; left:50%; top:50%; z-index:2; pointer-events:none; white-space:nowrap;
+  transform:translate3d(-50%,-50%,0) rotate(-4.5deg); transform-origin:center;
+  font-family:"JetBrains Mono",monospace; font-size:12.5px; font-weight:500; letter-spacing:.2em; line-height:1;
+  color:var(--rb); font-weight:700; padding:8px 20px 8px 24px; border:1.5px solid var(--rb); border-radius:3px;
+  background:repeating-linear-gradient(-45deg, color-mix(in srgb,var(--rb) 13%,var(--surface)) 0 5px,
+    var(--surface) 5px 11px)}
+.ui__foot{padding:10px 16px 11px; border-top:1px solid var(--line-soft); background:var(--raised);
+  font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--muted)}
+.ui__foot span{display:block}
+.ui__foot .dbl{margin-top:4px; color:var(--rb)}
+
+/* ---------- gövde ---------- */
+.page{position:relative; z-index:5; background:var(--bg)}
+.sec{padding:96px 0; border-top:1px solid var(--line-soft)}
+h2{font-size:clamp(1.5rem,3vw,2.1rem); font-weight:800; letter-spacing:-.038em}
+.two{display:grid; gap:30px; min-width:0}
+.two > *{min-width:0}
+@media (min-width:880px){ .two{grid-template-columns:150px minmax(0,1fr); gap:56px; align-items:start} }
+.two__k{font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--dim); padding-top:7px}
+.body p{color:var(--muted); font-weight:300; max-width:62ch}
+.body p + p{margin-top:16px}
+.body b{color:var(--text); font-weight:500}
+.lead{font-size:clamp(1.12rem,2.3vw,1.5rem); font-weight:300; line-height:1.48; max-width:37ch; letter-spacing:-.02em; color:var(--text) !important}
+.lead b{font-weight:600}
+
+.flow{margin-top:30px}
+.flow li{position:relative; padding:0 0 30px 30px; border-left:1px solid var(--line)}
+.flow li:last-child{border-left-color:transparent; padding-bottom:0}
+.flow li::before{content:""; position:absolute; left:-4.5px; top:7px; width:8px; height:8px; border-radius:50%;
+  background:var(--bg); border:1px solid var(--acc)}
+.flow h3{font-size:1.05rem; letter-spacing:-.026em}
+.flow p{margin-top:7px; color:var(--muted); font-weight:300; font-size:.97rem; max-width:52ch}
+.flow code{font-family:"JetBrains Mono",monospace; font-size:.86em; background:var(--raised); padding:1px 5px; border-radius:4px; color:var(--text)}
+
+.defs{margin-top:8px}
+.defs > div{display:grid; gap:6px; padding:20px 0; border-bottom:1px solid var(--line-soft)}
+@media (min-width:780px){ .defs > div{grid-template-columns:210px minmax(0,1fr); gap:44px; align-items:baseline} }
+.defs dt{font-weight:700; font-size:1rem; letter-spacing:-.025em}
+.defs dd{color:var(--muted); font-weight:300; max-width:60ch; font-size:.98rem}
+.defs b{color:var(--text); font-weight:500}
+
+/* indirmenin yanında ikincil eylem: demo */
+.trybar{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-top:30px; padding-top:22px;
+  border-top:1px solid var(--line-soft)}
+.trybar p{color:var(--muted); font-weight:300; font-size:.98rem}
+.trybar .btn{padding:10px 18px; font-size:13.5px}
+.trybar + .fn{margin-top:11px}
+
+/* veritabanı farkı: küçük, sakin, vektör */
+.dbeng{margin-top:14px; font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--dim)}
+.dv{position:relative; margin-top:30px; max-width:640px; border:1px solid var(--line); border-radius:11px;
+  background:var(--surface); overflow:hidden}
+.dv__top{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:11px 15px;
+  border-bottom:1px solid var(--line-soft); background:var(--raised)}
+.dv__top b{font-family:"JetBrains Mono",monospace; font-size:12px; font-weight:500}
+.dv__top .mono{font-size:11px; color:var(--muted)}
+.dv__top .push{margin-left:auto; display:flex; gap:9px}
+.dv__top i{font-style:normal}
+.dv__top .p{color:var(--ok)} .dv__top .m{color:var(--err)} .dv__top .c{color:var(--acc-text)}
+.dv__list{padding:9px 15px 11px}
+.dr{display:grid; grid-template-columns:13px minmax(0,1fr); gap:2px 10px; padding:6px 0; font-size:12px; line-height:1.5}
+@media (min-width:540px){ .dr{grid-template-columns:13px 148px minmax(0,1fr); gap:0 10px; align-items:baseline} }
+.dr .k{font-weight:500}
+.dr[data-k="p"] .k{color:var(--ok)}
+.dr[data-k="m"] .k{color:var(--err)}
+.dr[data-k="c"] .k{color:var(--acc-text)}
+.dr .n{color:var(--text); overflow-wrap:anywhere}
+.dr .v{grid-column:2/-1; color:var(--muted)}
+@media (min-width:540px){ .dr .v{grid-column:auto} }
+.dr s{text-decoration:none; color:var(--dim); padding:0 3px}
+.dr .nv{position:relative; font-style:normal; color:var(--text); transition:color .26s var(--ease-out)}
+.dr .nv::after{content:""; position:absolute; left:-1px; right:-1px; top:54%; height:1px; background:var(--rb);
+  transform:scaleX(0); transform-origin:left center; transition:transform .26s var(--ease-out)}
+.dv.done .dr .nv{color:var(--rb)}
+.dv.done .dr .nv::after{transform:scaleX(1)}
+.dv.done .dr .nv, .dv.done .dr .nv::after{transition-delay:calc(var(--i) * 55ms)}
+.dv__foot{position:relative; min-height:40px; padding:12px 15px; border-top:1px solid var(--line-soft);
+  background:var(--raised); font-size:11px}
+.dv__foot span{position:absolute; left:15px; top:12px; transition:opacity .26s var(--ease-out)}
+.dv__foot .f1{color:var(--muted)}
+.dv__foot .f2{color:var(--rb); opacity:0}
+.dv.done .dv__foot .f1{opacity:0}
+.dv.done .dv__foot .f2{opacity:1; transition-delay:.3s}
+.dv__foot .pill{position:absolute; right:14px; top:8px; font-style:normal; font-size:10.5px; color:var(--muted);
+  border:1px solid var(--line); border-radius:5px; padding:3px 9px; transition:color .26s ease, border-color .26s ease}
+.dv.done .dv__foot .pill{color:var(--rb); border-color:color-mix(in srgb,var(--rb) 60%,transparent)}
+
+/* indirme */
+.tabs{display:flex; gap:6px; margin-top:22px}
+.tab{font-family:inherit; font-size:13.5px; font-weight:600; padding:8px 16px; border-radius:7px; cursor:pointer;
+  border:1px solid var(--line); background:transparent; color:var(--muted);
+  transition:color .18s ease, border-color .18s ease, background-color .18s ease}
+.tab[aria-selected="true"]{color:var(--text); border-color:var(--acc); background:color-mix(in srgb,var(--acc) 12%,transparent)}
+@media (hover:hover) and (pointer:fine){ .tab:hover{color:var(--text)} }
+.panel[hidden]{display:none}
+.panel{padding-top:24px; min-width:0}
+.cmd{display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line-soft);
+  border-radius:8px; padding:11px 12px; margin-top:10px; overflow:hidden; min-width:0}
+.cmd code{font-family:"JetBrains Mono",monospace; font-size:12.2px; color:var(--text); overflow-x:auto;
+  white-space:pre; flex:1 1 auto; min-width:0; scrollbar-width:thin; padding-bottom:2px}
+.cmd .k{color:var(--acc-text)}
+.copy{flex:none; font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--dim); background:none;
+  border:1px solid var(--line); border-radius:5px; padding:4px 9px; cursor:pointer; transition:color .18s ease, border-color .18s ease}
+@media (hover:hover) and (pointer:fine){ .copy:hover{color:var(--acc-text); border-color:var(--acc)} }
+.cmdk{margin-top:22px; font-size:13px; color:var(--dim); font-family:"JetBrains Mono",monospace}
+.cmdk:first-child{margin-top:0}
+.dl{margin-top:26px; border-top:1px solid var(--line-soft)}
+.dl a{display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; padding:15px 0; text-decoration:none;
+  border-bottom:1px solid var(--line-soft); transition:padding-left .22s var(--ease-out)}
+@media (hover:hover) and (pointer:fine){ .dl a:hover{padding-left:10px} .dl a:hover em{color:var(--acc-text)} }
+.dl b{font-weight:600; min-width:150px}
+.dl span{font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--dim); flex:1 1 auto; min-width:0; overflow-wrap:anywhere}
+.dl em{font-style:normal; font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--muted); transition:color .18s ease}
+.dlnote{margin-top:18px}
+
+.free h2{font-size:clamp(1.8rem,4vw,2.7rem); max-width:20ch}
+.free p{margin-top:18px; color:var(--muted); font-weight:300; max-width:50ch; font-size:1.05rem}
+.free .mail{display:inline-block; margin-top:26px; font-family:"JetBrains Mono",monospace; font-size:15px;
+  color:var(--acc-text); text-decoration:none; border-bottom:1px solid color-mix(in srgb,var(--acc) 45%,transparent); padding-bottom:3px}
+
+footer{border-top:1px solid var(--line-soft); padding:40px 0 64px; font-size:13.5px; color:var(--dim)}
+.foot{display:flex; flex-wrap:wrap; gap:14px 26px; align-items:center}
+footer a{color:var(--muted); text-decoration:none}
+@media (hover:hover) and (pointer:fine){ footer a:hover{color:var(--text)} }
+.foot__end{margin-top:20px}
+
+/* ---------- hareket ---------- */
+@media (prefers-reduced-motion: no-preference){
+  html.js .ln i{animation:up .78s var(--ease-out) both; animation-delay:calc(var(--d,0) * 1ms)}
+  @keyframes up{from{transform:translateY(112%)}}
+  html.js .fade{animation:fd .7s var(--ease-out) both; animation-delay:calc(var(--d,0) * 1ms)}
+  @keyframes fd{from{opacity:0}}
+  html.js .dv .dr{opacity:0}
+  html.js .dv.play .dr{animation:drin .34s var(--ease-out) both; animation-delay:calc(var(--i) * 50ms)}
+  @keyframes drin{from{opacity:0; transform:translate3d(0,7px,0)} to{opacity:1; transform:none}}
+  html.js .seen .seal{animation:stamp .26s var(--ease-out) .16s both}
+  @keyframes stamp{from{opacity:0; transform:translate3d(-50%,-50%,0) rotate(-4.5deg) scale(1.08)}}
+  @supports (animation-timeline: view()){
+    html.js .rv{animation:rvk linear both; animation-timeline:view(); animation-range:entry 2% cover 22%}
+  }
+  @keyframes rvk{from{opacity:0; transform:translate3d(0,14px,0)} to{opacity:1; transform:none}}
+  html.io .rv{opacity:0; transform:translate3d(0,14px,0); transition:opacity .5s var(--ease-out), transform .5s var(--ease-out)}
+  html.io .rv.in{opacity:1; transform:none}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">İçeriğe geç</a>
+
+<header class="nav" id="nav" data-solid="0">
+  <div class="shell nav__in">
+    <a class="brand" id="brand" href="#top">
+      <svg viewBox="0 0 100 100" role="img" aria-label="Sevkit"><title>Sevkit</title><rect width="100" height="100" rx="22" fill="#121214"/><g transform="translate(12.81 5.02) scale(0.875)"><defs><linearGradient id="k3" gradientUnits="userSpaceOnUse" x1="58.86" y1="65.26" x2="24.61" y2="80.17"><stop offset="0" stop-color="#7a3405"/><stop offset=".3" stop-color="#b4530b"/><stop offset="1" stop-color="#ff8833"/></linearGradient><linearGradient id="k2" gradientUnits="userSpaceOnUse" x1="22.83" y1="47.52" x2="58.86" y2="65.26"><stop offset="0" stop-color="#7a3405"/><stop offset=".28" stop-color="#b4530b"/><stop offset="1" stop-color="#ff8833"/></linearGradient><linearGradient id="k1" gradientUnits="userSpaceOnUse" x1="22.83" y1="47.52" x2="54.16" y2="31.72"><stop offset="0" stop-color="#ff8833"/><stop offset="1" stop-color="#ffa75e"/></linearGradient></defs><path d="M55.27 57.01 L21.02 71.92 A9 9 0 0 0 28.20 88.42 L62.45 73.52 A9 9 0 0 0 55.27 57.01 Z" fill="url(#k3)"/><path d="M18.86 55.59 L54.88 73.34 A9 9 0 0 0 62.84 57.19 L26.81 39.44 A9 9 0 0 0 18.86 55.59 Z" fill="url(#k2)"/><path d="M26.89 55.55 L57.56 40.09 L57.56 29.45 L51.96 32.27 L51.96 22.75 L18.78 39.48 A9 9 0 0 0 26.89 55.55 Z" fill="url(#k1)"/><g transform="translate(28.83 34.97) rotate(-26.76)"><path d="M0 0 L0 -5.5 A11 11.4 0 0 1 22 -5.5 L22 0 Z" fill="#3d5ce0"/><path d="M0 0 L0 -3.2 L22 -3.2 L22 0 Z" fill="#2a41a8"/><path d="M19 -3.4 L31.5 -2.2 Q33.5 -1.1 31.5 0 L19 0 Z" fill="#2a41a8"/><path d="M8.4 -9.4 h5.2 v3.6 h-5.2 Z" fill="#ff8833"/></g></g></svg>
+      Sevkit
+    </a>
+    <nav class="nav__links" aria-label="Sayfa">
+      <a href="#cut">Ürün</a>
+      <a href="#kurulum">Nasıl çalışır</a>
+      <a href="#veritabani">Veritabanı</a>
+      <a href="#ozellikler">Özellikler</a>
+      <a href="#indir">İndir</a>
+    </nav>
+    <button class="themebtn" id="themeBtn" type="button" aria-pressed="false"><span id="themeTxt">açık tema</span></button>
+  </div>
+</header>
+
+<div class="wipe" id="wipe" aria-hidden="true"><i></i><i></i></div>
+
+<main id="main">
+
+  <div class="cinewrap" id="cinewrap">
+    <section class="cine" id="cine" aria-labelledby="h1">
+      <div class="stage" id="stage">
+        <canvas id="cv" role="img" aria-label="Dağıtım sahnesi: yeni sürüm önce tek sunucuya kurulur, onaydan sonra kalan beş sunucuya yayılır; api-01 sağlık kontrolünden geçemez ve eski sürüme döner."></canvas>
+        <div class="labels" id="labels" aria-hidden="true"></div>
+        <div class="scrim" aria-hidden="true"></div>
+        <div class="scrim2" id="scrim2" aria-hidden="true"></div>
+      </div>
+
+      <i class="bar bar--t" id="barT" aria-hidden="true"></i>
+      <i class="bar bar--b" id="barB" aria-hidden="true"></i>
+
+      <div class="rail" id="rail" aria-hidden="true">
+        <ol>
+          <li data-on="1">paket hazır</li><li>ilk sunucu</li><li>kalan sunucular</li><li>geri alma</li>
+        </ol>
+      </div>
+
+      <div class="hero" id="hero">
+        <div class="shell">
+          <h1 id="h1">
+            <span class="ln"><i style="--d:260">Sevkit paketinizi taşır.</i></span>
+          </h1>
+          <p class="sub fade" style="--d:520">CI'ın ürettiği paketi Windows (IIS, servis) ve Linux sunucularına
+            <b>sizin yerinize</b> kurar. Önce tek sunucuda dener, siz onaylayınca yayar. Gerekirse
+            <b>sunucuyu da veritabanını da</b> geri alır. Kendi sunucunuzda çalışır, kodunuz dışarı çıkmaz.</p>
+          <div class="cta fade" style="--d:700">
+            <a class="btn btn--p" href="#indir">Sevkit'i indir</a>
+            <a class="btn btn--s" href="#kurulum">Nasıl çalışır</a>
+          </div>
+          <ul class="edge fade" style="--d:880">
+            <li>Önce tek sunucuda dener.</li>
+            <li>Sağlık düşerse eski sürüme döner.</li>
+            <li data-key="1"><b class="tag">Sevkit'e özel</b>Veritabanı değişikliklerini de görür, geri alır.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="narr" id="narr" aria-hidden="true"><div class="shell"><span id="narrTxt"></span></div></div>
+      <p class="hint" id="hint" aria-hidden="true">kaydırın</p>
+    </section>
+  </div>
+
+  <section class="cut" id="cut" aria-labelledby="cut-h">
+    <div class="cutin">
+      <div class="shell cutgrid">
+        <div class="cuttxt">
+          <h2 id="cut-h">Deploy sürerken ekranınız.</h2>
+          <p>Hangi sunucu hangi adımda, <b>sağlık kontrolü</b> ne dedi, hangisi <b>eski sürüme döndü</b>:
+            hepsi tek ekranda, deploy bitmeden. Sorun çıkan sunucu durur, kalanlar etkilenmez.</p>
+          <div class="sevki">
+            <p class="fn"><span class="st" aria-hidden="true">*</span><span class="sr">Not: </span>Sahnedeki kuryenin adı Sevki.</p>
+            <p class="fn"><span class="st" aria-hidden="true">*</span><span class="sr">Not: </span>Yandaki ekran ürünün kendisi.</p>
+          </div>
+        </div>
+
+        <div class="ui" aria-label="Sevkit Saha ekranı, örnek sevkiyat">
+          <div class="ui__top">
+            <span class="dot" aria-hidden="true"></span>
+            <b>Saha</b>
+            <span class="mono">magaza-web · 4.9.2</span>
+            <span class="mono push">yayılma 2/2 · durduruldu</span>
+          </div>
+          <div class="ui__steps grid7 mono" aria-hidden="true">
+            <span>yedekle</span><span>getir</span><span>doğrula</span><span>durdur</span><span>değiştir</span><span>başlat</span><span>sağlık</span>
+          </div>
+          <ul class="rows">
+            <li class="row" data-st="ok">
+              <span class="row__n">web-01 <em>kanarya</em></span>
+              <span class="grid7" aria-hidden="true"><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i></span>
+              <span class="row__s">sağlıklı · 00:41</span>
+            </li>
+            <li class="row" data-st="ok">
+              <span class="row__n">web-02</span>
+              <span class="grid7" aria-hidden="true"><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i></span>
+              <span class="row__s">sağlıklı · 01:02</span>
+            </li>
+            <li class="row" data-st="ok">
+              <span class="row__n">web-03</span>
+              <span class="grid7" aria-hidden="true"><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i></span>
+              <span class="row__s">sağlıklı · 01:05</span>
+            </li>
+            <li class="row" data-st="ok">
+              <span class="row__n">app-01</span>
+              <span class="grid7" aria-hidden="true"><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i></span>
+              <span class="row__s">sağlıklı · 01:09</span>
+            </li>
+            <li class="row" data-st="rb">
+              <span class="row__n">api-01</span>
+              <span class="grid7" aria-hidden="true"><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="err"></i></span>
+              <span class="row__s">geri alındı · 4.9.1</span>
+              <span class="seal" aria-hidden="true">GERİ ALINDI</span>
+            </li>
+            <li class="row" data-st="ok">
+              <span class="row__n">job-01</span>
+              <span class="grid7" aria-hidden="true"><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i><i class="seg" data-s="ok"></i></span>
+              <span class="row__s">sağlıklı · 01:14</span>
+            </li>
+          </ul>
+          <div class="ui__foot">
+            <span>5/6 sunucu güncel · api-01 eski sürüme döndü · yayılma durduruldu · kayda geçti</span>
+            <span class="dbl">api-01 veritabanı da eski haline döndü · 6 satır geri alındı</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="page" id="urun">
+
+    <section class="sec" aria-labelledby="ne-h">
+      <div class="shell two">
+        <p class="two__k rv">ne yapar</p>
+        <div class="body">
+          <h2 id="ne-h" style="position:absolute;left:-9999px">Sevkit ne yapar</h2>
+          <p class="lead rv">CI'ın ürettiği paketi sunucularınıza kurar: önce <b>tek sunucuya</b>, siz onaylayınca
+            kalanlara. Sağlık kontrolü düşen sunucu <b>eski sürüme döner</b>, diğerlerine dokunulmaz.</p>
+          <p class="rv" style="margin-top:26px">Sunucuya RDP ile girip klasör kopyalayan, servisi elle durdurup başlatan
+            IIS ve .NET ekipleri için. Aynı iş, elle değil: her deploy aynı sırayla yürür; <b>kim, neyi, ne zaman</b>
+            kurdu kayıtta durur.</p>
+          <p class="rv">Kendi sunucunuzda çalışır. Kodunuz, paketiniz ve kayıtlarınız dışarı çıkmaz.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="kurulum" aria-labelledby="kurulum-h">
+      <div class="shell two">
+        <p class="two__k rv">nasıl çalışır</p>
+        <div class="body">
+          <h2 id="kurulum-h" class="rv">Kurulum üç adım</h2>
+          <div class="flow rv">
+            <ol>
+              <li><h3>Merkezi kurun</h3>
+                <p>Tek komut, tek servis. Arayüz, paketler ve deploy kayıtları burada durur; ekip <code>LDAP</code> hesabıyla girer.</p></li>
+              <li><h3>Sunucuları bağlayın</h3>
+                <p>Her hedef sunucuda tek satır: Windows'ta servis, Linux'ta systemd olarak kurulur.
+                  Güvenlik duvarında yeni port açmanız gerekmez.</p></li>
+              <li><h3>Paketi bırakın</h3>
+                <p>CI paketi merkeze bırakır ya da Sevkit Git'ten kendisi derler. Önce tek sunucuya kurulur,
+                  onayınızla yayılır, tutmazsa geri alınır.</p></li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="veritabani" aria-labelledby="db-h">
+      <div class="shell two">
+        <p class="two__k rv">veritabanı</p>
+        <div class="body" style="max-width:none">
+          <h2 id="db-h" class="rv">Sunucuyu geri aldınız, peki ya veritabanı?</h2>
+          <p class="rv" style="margin-top:16px">Deploy sırasında uygulamanın parametre ve referans tablolarının
+            <b>anlık görüntüsü</b> alınır. İki an arasındaki farkı satır satır görürsünüz: eklenen, silinen, değişen.
+            Yanlış giden bir şey varsa <b>tek işlemde</b> geri alınır. Test ortamı tek tuşla eski haline döner.</p>
+          <p class="rv dbeng">PostgreSQL, SQL Server ve SQLite.</p>
+
+          <div class="dv rv" id="dv" role="img" aria-label="Veritabanı farkı: 14:02 ve 14:39 anlık görüntüleri arasında altı satır değişmiş. İki satır eklenmiş, bir satır silinmiş, üç satır değişmiş. Değişikliklerin tamamı 14:41'de tek işlemde geri alınmış.">
+            <div class="dv__top">
+              <b>parametre_tanim</b>
+              <span class="mono">14:02 &#8594; 14:39</span>
+              <span class="mono push"><i class="p">+2</i><i class="m">&#8722;1</i><i class="c">~3</i></span>
+            </div>
+            <ol class="dv__list">
+              <li class="dr" style="--i:0" data-k="p"><span class="k mono">+</span><span class="n mono">KDV_ORANI_2</span><span class="v mono"><em class="nv">20</em></span></li>
+              <li class="dr" style="--i:1" data-k="c"><span class="k mono">~</span><span class="n mono">KARGO_ESIK</span><span class="v mono">350 <s>&#8594;</s> <em class="nv">500</em></span></li>
+              <li class="dr" style="--i:2" data-k="c"><span class="k mono">~</span><span class="n mono">KAMPANYA_KODU</span><span class="v mono">KIS24 <s>&#8594;</s> <em class="nv">BAHAR25</em></span></li>
+              <li class="dr" style="--i:3" data-k="m"><span class="k mono">&#8722;</span><span class="n mono">ESKI_LIMIT</span><span class="v mono">120 <s>&#8594;</s> <em class="nv">silindi</em></span></li>
+              <li class="dr" style="--i:4" data-k="c"><span class="k mono">~</span><span class="n mono">SLA_SAAT</span><span class="v mono">24 <s>&#8594;</s> <em class="nv">48</em></span></li>
+              <li class="dr" style="--i:5" data-k="p"><span class="k mono">+</span><span class="n mono">ODEME_SAGLAYICI</span><span class="v mono"><em class="nv">3</em></span></li>
+            </ol>
+            <div class="dv__foot mono">
+              <span class="f1">6 satır fark</span>
+              <span class="f2">tek işlemde geri alındı &#183; 14:41</span>
+              <i class="pill">geri al</i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="ozellikler" aria-labelledby="ozellikler-h">
+      <div class="shell two">
+        <p class="two__k rv">özellikler</p>
+        <div class="body" style="max-width:none">
+          <h2 id="ozellikler-h" class="rv">Özellikler</h2>
+          <dl class="defs rv">
+            <div><dt>Kanarya</dt><dd>Yeni sürüm önce tek sunucuya gider. Sağlık kontrolü geçse bile <b>siz onaylamadan</b> kalan sunuculara yayılmaz.</dd></div>
+            <div><dt>Otomatik geri alma</dt><dd>Sağlık kontrolü düşerse o sunucu eski sürüme döner, <b>kalanlara dokunulmaz</b>. Yedek, deploy başlamadan alınır.</dd></div>
+            <div><dt>Elle değişiklik uyarısı</dt><dd>Sunucuda elle değiştirilmiş dosya varsa Sevkit bunu <b>deploy'dan önce</b> söyler. Kimsenin değişikliği sessizce ezilmez.</dd></div>
+            <div><dt>Veritabanı anlık görüntüsü</dt><dd>Parametre tablolarının anlık görüntüsünü alır, farkı gösterir, <b>tek işlemde</b> geri alır. Test ortamını bilinen bir noktaya sıfırlarsınız.</dd></div>
+            <div><dt>Git'ten build</dt><dd>CI'ınız yoksa Sevkit deponuzdan çeker, derler ve paketi kendisi üretir. CI'ınız varsa hazır paketi olduğu gibi alır.</dd></div>
+            <div><dt>Onay akışı ve LDAP</dt><dd>Kim deploy eder, kim onaylar, hangi ortama kim dokunur: LDAP'taki kullanıcı ve gruplarla tanımlanır. Ekip mevcut hesabıyla girer.</dd></div>
+            <div><dt>Kayıt</dt><dd>Hangi sürüm hangi sunucuya, ne zaman, kimin onayıyla gitti. Her adımın zamanı ve çıktısı saklanır.</dd></div>
+            <div><dt>Canlı görünüm</dt><dd>Deploy sürerken bütün sunucular tek ekranda: hangisi hangi adımda, hangisinde hangi sürüm var.</dd></div>
+            <div><dt>Türkçe arayüz</dt><dd>Ekranlar, hata metinleri ve kayıtlar Türkçe.</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="indir" aria-labelledby="indir-h">
+      <div class="shell two">
+        <p class="two__k rv">v1.3.0</p>
+        <div class="body" style="max-width:none">
+          <h2 id="indir-h" class="rv">İndir</h2>
+          <p class="rv" style="margin-top:14px">Merkez bir sunucuya, agent dağıtım yapacağınız her sunucuya. İkisi de tek komut.</p>
+
+          <div class="tabs rv" role="tablist" aria-label="İşletim sistemi">
+            <button class="tab" type="button" role="tab" id="tab-win" aria-controls="p-win" aria-selected="true">Windows</button>
+            <button class="tab" type="button" role="tab" id="tab-lin" aria-controls="p-lin" aria-selected="false" tabindex="-1">Linux</button>
+          </div>
+
+          <!-- Bağlantılar yer tutucu (#): depo özel, yayın dosyaları henüz bir indirme adresine konmadı.
+               Komutlardaki sevkit.sirket.local kendi merkez adresinizle değişir. -->
+          <div class="panel" id="p-win" role="tabpanel" aria-labelledby="tab-win" tabindex="0">
+            <p class="cmdk">merkez — yükseltilmiş PowerShell</p>
+            <div class="cmd"><code>msiexec /i sevkit-merkez-1.3.0-win-x64.msi /qn PORT=8443</code><button class="copy" type="button">kopyala</button></div>
+            <p class="cmdk">agent — her hedef sunucuda</p>
+            <div class="cmd"><code>msiexec /i sevkit-agent-1.3.0-win-x64.msi /qn MERKEZ=https://sevkit.sirket.local</code><button class="copy" type="button">kopyala</button></div>
+            <div class="dl">
+              <a href="#"><b>Merkez — Windows</b><span>sevkit-merkez-1.3.0-win-x64.msi</span><em>indir</em></a>
+              <a href="#"><b>Agent — Windows</b><span>sevkit-agent-1.3.0-win-x64.msi</span><em>indir</em></a>
+            </div>
+          </div>
+
+          <div class="panel" id="p-lin" role="tabpanel" aria-labelledby="tab-lin" tabindex="0" hidden>
+            <p class="cmdk">merkez — systemd birimi kurulur</p>
+            <div class="cmd"><code>tar xzf sevkit-merkez-1.3.0-linux-x64.tar.gz &amp;&amp; sudo ./sevkit-merkez/kur.sh</code><button class="copy" type="button">kopyala</button></div>
+            <p class="cmdk">agent — her hedef sunucuda</p>
+            <div class="cmd"><code>tar xzf sevkit-agent-1.3.0-linux-x64.tar.gz &amp;&amp; sudo ./sevkit-agent/kur.sh --merkez https://sevkit.sirket.local</code><button class="copy" type="button">kopyala</button></div>
+            <div class="dl">
+              <a href="#"><b>Merkez — Linux</b><span>sevkit-merkez-1.3.0-linux-x64.tar.gz</span><em>indir</em></a>
+              <a href="#"><b>Agent — Linux</b><span>sevkit-agent-1.3.0-linux-x64.tar.gz</span><em>indir</em></a>
+            </div>
+          </div>
+
+          <p class="cmdk" style="margin-top:30px">merkez — docker</p>
+          <div class="cmd"><code>docker run -d -p 8443:8443 -v sevkit:/veri sevkit/merkez:1.3.0</code><button class="copy" type="button">kopyala</button></div>
+          <p class="dlnote fn"><span class="st" aria-hidden="true">*</span><span class="sr">Not: </span>sha256 listesi ve sürüm notları yayın sayfasında.
+            Docker seçeneği yalnız merkez için; agent hedef sunucuya doğrudan kurulur.</p>
+
+          <div class="trybar">
+            <p>Kurmadan denemek isterseniz:</p>
+            <a class="btn btn--s" href="demo/sevkit-demo.html" target="_blank" rel="noopener">Demoyu açın<span class="sr"> (yeni sekmede açılır)</span></a>
+          </div>
+          <p class="fn"><span class="st" aria-hidden="true">*</span><span class="sr">Not: </span>Gerçek arayüz, örnek verilerle çalışır. Kurulum gerekmez.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec free" aria-labelledby="ucretsiz-h">
+      <div class="shell two">
+        <p class="two__k rv">kullanım</p>
+        <div>
+          <h2 id="ucretsiz-h" class="rv">Kişisel kullanım için ücretsiz.</h2>
+          <p class="rv">İndirin, kendi sunucunuza kurun, kullanın. Merkez dışarıya veri göndermez.</p>
+          <p class="rv">Kurumsal ya da özel bir ihtiyacınız varsa yazın:</p>
+          <a class="mail rv" href="mailto:mustafaberksam@gmail.com">mustafaberksam@gmail.com</a>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="shell">
+    <div class="foot">
+      <span>Sevkit v1.3.0</span>
+      <a href="#">LİSANS</a>
+      <a href="#">Üçüncü taraf bildirimleri</a>
+      <a href="mailto:mustafaberksam@gmail.com">mustafaberksam@gmail.com</a>
+    </div>
+    <p class="foot__end fn"><span class="st" aria-hidden="true">*</span><span class="sr">Not: </span>Lisans metni ve üçüncü taraf bildirimleri indirdiğiniz dosyanın içinde.</p>
+  </div>
+</footer>
+
+<script>
+
+
+
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  root.classList.add('js');
+  var mqR = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var reduce = mqR.matches;
+
+  /* ================= tema ================= */
+  var themeBtn = document.getElementById('themeBtn'), themeTxt = document.getElementById('themeTxt');
+  var theme = 'dark';
+  var saved = null;
+  try { saved = localStorage.getItem('sevkit-tema'); } catch (e) {}
+
+  /* ================= kurye piksel matrisleri (kimlik/kurye/kurye-piksel.ts) ================= */
+  var PK = ['_', 'out', 'cap', 'capD', 'badge', 'skin', 'hair', 'eye', 'jacket', 'jacketD', 'stripe',
+            'pants', 'pantsD', 'shoe', 'box', 'boxD', 'tape', 'plate', 'fx'];
+  var PAL_D = { out: '#09090c', cap: '#3d5ce0', capD: '#2a41a8', badge: '#ff8833', skin: '#e0ac7e', hair: '#2b1d14',
+    eye: '#09090c', jacket: '#3d5ce0', jacketD: '#2a41a8', stripe: '#ff8833', pants: '#232a4a', pantsD: '#181d35',
+    shoe: '#0e0e11', box: '#c08a52', boxD: '#94673a', tape: '#e2bd86', plate: '#ff8833', fx: '#f3f1ea' };
+  var PAL_L = { out: '#1e1d1b', cap: '#3553d4', capD: '#243a9a', badge: '#f07a22', skin: '#e0ac7e', hair: '#2b1d14',
+    eye: '#1e1d1b', jacket: '#3553d4', jacketD: '#243a9a', stripe: '#f07a22', pants: '#262c46', pantsD: '#1b2036',
+    shoe: '#1a1a1d', box: '#c9955c', boxD: '#9f7141', tape: '#e9c793', plate: '#f07a22', fx: '#ffffff' };
+  var ORIGIN_X = 4;
+
+  var BOX_HI = ['....................', '....................', '....................', '....................',
+    '....................', '..........eeegee....', '..........ehhgee....', '..........ehhgee....',
+    '..........e5egee....', '..........ffffff....', '....................', '....................',
+    '....................', '....................'];
+  var BOX_LO = ['....................', '....................', '....................', '....................',
+    '....................', '....................', '..........eeegee....', '..........ehhgee....',
+    '..........ehhgee....', '..........e5egee....', '..........ffffff....', '....................',
+    '....................', '....................'];
+  var F = {
+    w0: { body: ['.......222..........', '......22422.........', '......3222233.......', '......66555.........',
+      '......65575.........', '......55555.........', '.......555..........', '.......8888.........',
+      '.......8899.........', '.......aaaa.........', '.......8888.........', '......cc..bb........',
+      '......cc..bb........', '.....dd...ddd.......'], prop: BOX_LO },
+    w1: { body: ['......22422.........', '......3222233.......', '......66555.........', '......65575.........',
+      '......55555.........', '.......555..........', '.......8888.........', '.......8899.........',
+      '.......aaaa.........', '.......8888.........', '....................', '........bb..........',
+      '........bb..........', '........ddd.........'], prop: BOX_HI },
+    w2: { body: ['.......222..........', '......22422.........', '......3222233.......', '......66555.........',
+      '......65575.........', '......55555.........', '.......555..........', '.......8888.........',
+      '.......8899.........', '.......aaaa.........', '.......8888.........', '......bb..cc........',
+      '......bb..cc........', '.....dd...ddd.......'], prop: BOX_LO },
+    k0: { body: ['.......222..........', '......22422.........', '......3222233.......', '......66555.........',
+      '......65575.........', '......55555.........', '.......555..........', '.......8888995......',
+      '.......8888.........', '.......aaaa.........', '.......8888.........', '.......ccbb.........',
+      '.......ccbb.........', '.......ddddd........'],
+      fx: ['....................', '....................', '....................', '....................',
+        '....................', '...............i....', '....................', '................i...',
+        '....................', '...............i....', '....................', '....................',
+        '....................', '....................'] },
+    k1: { body: ['.......222..........', '......22422.........', '......3222233.......', '......66555.........',
+      '......65575.........', '......55555.........', '.......555..........', '.......88895........',
+      '.......8889.........', '.......aaaa.........', '.......8888.........', '.......ccbb.........',
+      '.......ccbb.........', '.......ddddd........'] },
+    t1: { body: ['.......222..........', '......22422.........', '......3222233.......', '......66555.........',
+      '......6557555.......', '......555559........', '.......555.9........', '.......88889........',
+      '.......8988.........', '.......a9aa.........', '.......8588.........', '.......ccbb.........',
+      '.......ccbb.........', '.......ddddd........'],
+      fx: ['.............i......', '..............i.....', '....................', '...............i....',
+        '....................', '....................', '....................', '....................',
+        '....................', '....................', '....................', '....................',
+        '....................', '....................'] }
+  };
+  var WALK = ['w0', 'w1', 'w2', 'w1'];
+
+  /* sprite önbelleği: kare başına tek 22x16 tuval, sahnede tek drawImage.
+     fillRect tufanı yerine blit — 60 fps'in asıl sebebi bu. */
+  var sc = {};
+  function sprite(key, face, prop, fx) {
+    var k = key + face + (prop ? 1 : 0) + (fx ? 1 : 0) + theme;
+    var c = sc[k];
+    if (c) return c;
+    var fr = F[key], p = pal(), r, cc, ch, lx;
+    c = document.createElement('canvas'); c.width = 22; c.height = 16;
+    var g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    var layers = [fr.body];
+    if (prop && fr.prop) layers.push(fr.prop);
+    for (var L = 0; L < layers.length; L++) {
+      var rows = layers[L];
+      g.fillStyle = p.out;
+      for (r = 0; r < rows.length; r++) for (cc = 0; cc < rows[r].length; cc++)
+        if (rows[r].charAt(cc) !== '.') { lx = face > 0 ? cc + 1 : 20 - cc; g.fillRect(lx - 1, r, 3, 3); }
+      for (r = 0; r < rows.length; r++) for (cc = 0; cc < rows[r].length; cc++) {
+        ch = rows[r].charAt(cc);
+        if (ch === '.') continue;
+        lx = face > 0 ? cc + 1 : 20 - cc;
+        g.fillStyle = p[PK[parseInt(ch, 36)]];
+        g.fillRect(lx, r + 1, 1, 1);
+      }
+    }
+    if (fx && fr.fx) {
+      for (r = 0; r < fr.fx.length; r++) for (cc = 0; cc < fr.fx[r].length; cc++) {
+        ch = fr.fx[r].charAt(cc);
+        if (ch === '.') continue;
+        lx = face > 0 ? cc + 1 : 20 - cc;
+        g.fillStyle = p[PK[parseInt(ch, 36)]];
+        g.fillRect(lx, r + 1, 1, 1);
+      }
+    }
+    sc[k] = c;
+    return c;
+  }
+  function pal() { return theme === 'light' ? PAL_L : PAL_D; }
+
+  /* ================= dünya ================= */
+  var GY = 190;                                   /* zemin çizgisi (dünya birimi) */
+  var DOORX = [240, 276, 312, 348, 384, 420];
+  var HOST = ['web-01', 'web-02', 'web-03', 'app-01', 'api-01', 'job-01'];
+  var ROLE = ['IIS · kanarya', 'IIS', 'IIS', 'servis', 'systemd', 'systemd'];
+  var CAB_W = 16, CAB_H = 26;
+  var SPEED = 52, KNOCK = 1.1, GIVE = 0.6;
+  var STORY = 15.0, BASE_T = 1.5, T_WAVE = 6.0;
+  var FAIL = 4;
+
+  /* Kanarya depodan çıkar. Dalga kuryeleri kanarya yoldan çekildikten sonra doğar
+     (sx değerleri 14 birim aralıklı: aynı hızda yürüyen kuryeler üst üste binmesin). */
+  var COUR = [
+    { d: 0, sx: 108, t0: 1.15 }, { d: 1, sx: 100, t0: T_WAVE }, { d: 2, sx: 120, t0: T_WAVE },
+    { d: 3, sx: 140, t0: T_WAVE }, { d: 4, sx: 160, t0: T_WAVE }, { d: 5, sx: 180, t0: T_WAVE }
+  ];
+  for (var ci = 0; ci < COUR.length; ci++) {
+    COUR[ci].tx = DOORX[COUR[ci].d] - 12;
+    COUR[ci].walk = (COUR[ci].tx - COUR[ci].sx) / SPEED;
+    COUR[ci].fail = COUR[ci].d === FAIL;
+  }
+
+  /* kamera yolu: sahne zamanına göre merkez x, görünen dünya genişliği, zemin oranı */
+  var KEY = [
+    { t: 0.0, cx: 102, vw: 218, gf: 0.54 },
+    { t: 1.5, cx: 116, vw: 218, gf: 0.54 },
+    { t: 3.2, cx: 178, vw: 228, gf: 0.59 },
+    { t: 4.6, cx: 240, vw: 202, gf: 0.64 },
+    { t: 6.6, cx: 248, vw: 254, gf: 0.66 },
+    { t: 9.0, cx: 322, vw: 330, gf: 0.68 },
+    { t: 11.6, cx: 382, vw: 214, gf: 0.66 },
+    { t: 12.9, cx: 378, vw: 186, gf: 0.64 },
+    { t: 15.0, cx: 322, vw: 210, gf: 0.66 }
+  ];
+  var ESTAB = { cx: 250, vw: 500, gf: 0.44 };
+
+  function sstep(x) { return x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function camAt(t) {
+    var i = 0;
+    while (i < KEY.length - 2 && t > KEY[i + 1].t) i++;
+    var a = KEY[i], b = KEY[i + 1];
+    var u = sstep((t - a.t) / (b.t - a.t));
+    return { cx: lerp(a.cx, b.cx, u), vw: lerp(a.vw, b.vw, u), gf: lerp(a.gf, b.gf, u) };
+  }
+
+  /* ================= renk yardımcıları ================= */
+  function rgb(h) { return [parseInt(h.substr(1, 2), 16), parseInt(h.substr(3, 2), 16), parseInt(h.substr(5, 2), 16)]; }
+  function mix3(a, b, t) {
+    return 'rgb(' + Math.round(lerp(a[0], b[0], t)) + ',' + Math.round(lerp(a[1], b[1], t)) + ',' + Math.round(lerp(a[2], b[2], t)) + ')';
+  }
+  var SKY = {
+    dark: { n: [rgb('#0b0c12'), rgb('#101119'), rgb('#171722')], d: [rgb('#101018'), rgb('#1b1722'), rgb('#31211a')] },
+    light: { n: [rgb('#b9c6de'), rgb('#d3d8e2'), rgb('#e6e4e6')], d: [rgb('#aebfdd'), rgb('#d8d7e0'), rgb('#f0e0cf')] }
+  };
+  var C = {};
+  function buildColors() {
+    var l = theme === 'light';
+    C.ground = l ? '#c8d0c6' : '#18211d';
+    C.groundLine = l ? '#b0bbae' : '#131a17';
+    C.ground2 = l ? '#bcc5ba' : '#131a16';
+    C.tuft = l ? '#b3bdb1' : '#1f2b25';
+    C.road = l ? '#bcbdc0' : '#1c1e23';
+    C.roadDash = l ? '#dadbde' : '#2b2e36';
+    C.far = l ? '#c2c8d6' : '#171821';
+    C.farWin = l ? '#b2b9ca' : '#1f2130';
+    C.farLit = l ? '#a8b0c4' : '#2b2f45';
+    C.ridge = l ? '#b9c1c8' : '#14151c';
+    C.out = l ? '#9a958d' : '#09090c';
+    C.cab = l ? '#f7f7f8' : '#202025';
+    C.cabIn = l ? '#e6e6ea' : '#18181b';
+    C.cabRack = l ? '#cfcfd6' : '#2c2c33';
+    C.depo = l ? '#ecedef' : '#1c1c21';
+    C.depoIn = l ? '#dddee2' : '#141418';
+    C.bay = l ? '#f07a22' : '#ff8833';
+    C.bayGlow = l ? 'rgba(240,122,34,.20)' : 'rgba(255,136,51,.16)';
+    C.pole = l ? '#a9aeb2' : '#26272e';
+    C.crate = l ? '#b4926c' : '#3a2c1f';
+    C.fg = l ? '#a7aca6' : '#0a0b0d';
+    C.star = l ? '#ffffff' : '#3a3a46';
+    sc = {};
+  }
+  function lampColor(k) {
+    var l = theme === 'light';
+    return k === 'run' ? (l ? '#f07a22' : '#ff8833') : k === 'ok' ? (l ? '#1b8a4b' : '#5fcf8a')
+      : k === 'err' ? (l ? '#cc2c50' : '#ff5c7a') : k === 'rb' ? (l ? '#8043d4' : '#c084fc')
+      : (l ? '#b9b9c0' : '#3a3a42');
+  }
+
+  /* ================= tuval ================= */
+  var stageEl = document.getElementById('stage');
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d', { alpha: false });
+  var off = document.createElement('canvas');
+  var octx = off.getContext('2d', { alpha: false });
+  var labelsEl = document.getElementById('labels');
+  var narrEl = document.getElementById('narr'), narrTxt = document.getElementById('narrTxt');
+  var railEl = document.getElementById('rail'), railLi = railEl.getElementsByTagName('li');
+  var heroEl = document.getElementById('hero'), hintEl = document.getElementById('hint');
+  var scrim2 = document.getElementById('scrim2');
+  var barT = document.getElementById('barT'), barB = document.getElementById('barB');
+  var cutEl = document.getElementById('cut'), navEl = document.getElementById('nav');
+  var wrapEl = document.getElementById('cinewrap');
+
+  var dispW = 0, dispH = 0, dpr = 1, small = false, VWS = 1, maxVW = 0, maxVH = 0;
+  var stars = [], farB = [], labs = [], lamps = ['off','off','off','off','off','off'];
+
+  function layout() {
+    dispW = stageEl.clientWidth || window.innerWidth;
+    dispH = stageEl.clientHeight || 400;
+    if (!dispW || !dispH) return;
+    small = dispW < 700;
+    dpr = Math.min(small ? 1.5 : 2, window.devicePixelRatio || 1);
+    VWS = small ? 0.55 : dispW < 1100 ? 0.8 : 1;
+
+    /* en geniş plan: taşma tuvalini buna göre bir kez ayır */
+    var f = fit(ESTAB.vw * VWS);
+    maxVW = f.vw; maxVH = f.vh;
+    off.width = Math.ceil(maxVW) + 2;
+    off.height = Math.ceil(maxVH) + 2;
+    octx.imageSmoothingEnabled = false;
+
+    cv.width = Math.round(dispW * dpr);
+    cv.height = Math.round(dispH * dpr);
+    ctx.imageSmoothingEnabled = false;
+
+    /* yıldızlar ve uzak binalar: kendi katman uzayında, deterministik */
+    stars = [];
+    var ns = small ? 26 : 64;
+    for (var s = 0; s < ns; s++) stars.push([(s * 97 + 23) % 1000, 12 + (s * 53 + 11) % 120, .35 + ((s * 37) % 60) / 100]);
+    farB = [];
+    for (var b = 0; b < 18; b++) {
+      var bx = 10 + b * 62 + ((b * 29) % 17);
+      var bw = 20 + ((b * 13) % 16);
+      var bh = 26 + ((b * 41) % 34);
+      farB.push([bx, bw, bh, (b * 7) % 5]);
+    }
+
+    /* kapı etiketleri: DOM, JetBrains Mono */
+    labelsEl.innerHTML = '';
+    labs = [];
+    var mk = function (txt, sub, wx, wy) {
+      var el = document.createElement('span');
+      el.className = 'lab';
+      el.style.opacity = '0';
+      el.innerHTML = '<b>' + txt + '</b><s>' + sub + '</s>';
+      labelsEl.appendChild(el);
+      labs.push({ el: el, wx: wx, wy: wy === undefined ? GY + 8 : wy, st: '', op: -1, tx: '' });
+      return labs[labs.length - 1];
+    };
+    for (var i = 0; i < DOORX.length; i++) mk(HOST[i], ROLE[i], DOORX[i] + CAB_W / 2);
+  }
+
+  function fit(vw) {
+    var vh = vw * (dispH / dispW);
+    var cap = small ? 320 : 300;
+    if (vh > cap) { vh = cap; vw = cap * (dispW / dispH); }
+    return { vw: vw, vh: vh };
+  }
+
+  /* ================= sahne çizimi ================= */
+  function skyAt(y, tod, sky) {
+    var u = clamp01((y - (GY - 165)) / 165);
+    var a, b, t;
+    if (u < 0.55) { a = 0; b = 1; t = u / 0.55; } else { a = 1; b = 2; t = (u - 0.55) / 0.45; }
+    var r = lerp(lerp(sky.n[a][0], sky.d[a][0], tod), lerp(sky.n[b][0], sky.d[b][0], tod), t);
+    var g = lerp(lerp(sky.n[a][1], sky.d[a][1], tod), lerp(sky.n[b][1], sky.d[b][1], tod), t);
+    var bl = lerp(lerp(sky.n[a][2], sky.d[a][2], tod), lerp(sky.n[b][2], sky.d[b][2], tod), t);
+    return 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (bl | 0) + ')';
+  }
+
+  function drawScene(iL, iT, sw, sh, t, tod) {
+    var L = iL, B = iT + sh, i, x, y;
+    var sky = theme === 'light' ? SKY.light : SKY.dark;
+    octx.setTransform(1, 0, 0, 1, -iL, -iT);
+
+    /* gökyüzü: atmosfer katmanı, gece → şafak */
+    var top = iT, bot = Math.min(GY, B);
+    for (y = top; y < bot; y += 3) { octx.fillStyle = skyAt(y, tod, sky); octx.fillRect(L, y, sw, 3); }
+    if (bot < B) { octx.fillStyle = skyAt(GY - 1, tod, sky); octx.fillRect(L, bot, sw, 3); }
+
+    /* yıldızlar (şafakla söner) */
+    var sa = (1 - tod) * (theme === 'light' ? 0 : 1);
+    if (sa > 0.02) {
+      var sOff = Math.round(camLeft * 0.75);
+      for (i = 0; i < stars.length; i++) {
+        x = ((stars[i][0] - sOff) % 1000 + 1000) % 1000 + iL - 40;
+        if (x < L - 2 || x > L + sw + 2) continue;
+        octx.fillStyle = 'rgba(160,166,196,' + (sa * stars[i][2] * 0.55).toFixed(3) + ')';
+        octx.fillRect(x, stars[i][1], 1, 1);
+      }
+    }
+
+    /* uzak sunucu binaları: yavaş paralaks */
+    var o3 = Math.round(camLeft * 0.68);
+    for (i = 0; i < farB.length; i++) {
+      var fb = farB[i];
+      x = fb[0] + o3;
+      if (x + fb[1] < L - 2 || x > L + sw + 2) continue;
+      y = GY - 6 - fb[2];
+      octx.fillStyle = C.far; octx.fillRect(x, y, fb[1], fb[2] + 6);
+      var row = 0;
+      for (var wy = y + 5; wy < GY - 12; wy += 7) {
+        row++;
+        if ((row + fb[3]) % 3 === 0) continue;
+        octx.fillStyle = (row + fb[3]) % 4 === 1 ? C.farLit : C.farWin;
+        for (var wx = x + 4; wx < x + fb[1] - 4; wx += 6) octx.fillRect(wx, wy, 2, 2);
+      }
+    }
+    /* sırt çizgisi */
+    octx.fillStyle = C.ridge; octx.fillRect(L, GY - 6, sw, 6);
+
+    /* zemin ve yol */
+    octx.fillStyle = C.ground; octx.fillRect(L, GY, sw, B - GY + 2);
+    octx.fillStyle = C.ground2; octx.fillRect(L, GY + 13, sw, B - GY);
+    octx.fillStyle = C.groundLine; octx.fillRect(L, GY, sw, 1);
+    octx.fillStyle = C.road; octx.fillRect(L, GY + 1, sw, 9);
+    octx.fillStyle = C.groundLine; octx.fillRect(L, GY + 10, sw, 1);
+    octx.fillStyle = C.roadDash;
+    var d0 = Math.floor(L / 12) * 12;
+    for (x = d0; x < L + sw; x += 12) octx.fillRect(x, GY + 5, 6, 1);
+    octx.fillStyle = C.tuft;
+    for (x = Math.floor(L / 7) * 7; x < L + sw; x += 7) octx.fillRect(x + ((x / 7) % 3), GY + 14 + ((x / 7) % 5), 1, 1);
+
+    /* depo */
+    drawDepo();
+    /* yol direkleri */
+    for (i = 0; i < 3; i++) drawPole(132 + i * 38);
+    /* sunucu kabinleri */
+    for (i = 0; i < DOORX.length; i++) drawCab(i);
+    /* kuryeler */
+    for (i = 0; i < COUR.length; i++) drawCourier(COUR[i], t, L, sw);
+
+  }
+
+  function drawDepo() {
+    var x = 6, w = 78, h = 50, y = GY - h;
+    octx.fillStyle = C.out; octx.fillRect(x - 1, y - 1, w + 2, h + 1);
+    octx.fillStyle = C.depo; octx.fillRect(x, y, w, h);
+    octx.fillStyle = C.depoIn; octx.fillRect(x + 3, y + 8, w - 6, h - 12);
+    /* çatı: saçak ve iki havalandırma */
+    octx.fillStyle = C.out; octx.fillRect(x - 3, y - 4, w + 6, 4);
+    octx.fillStyle = C.depo; octx.fillRect(x - 2, y - 3, w + 4, 3);
+    octx.fillStyle = C.out; octx.fillRect(x + 16, y - 9, 7, 6); octx.fillRect(x + 44, y - 8, 6, 5);
+    octx.fillStyle = C.depo; octx.fillRect(x + 17, y - 8, 5, 5); octx.fillRect(x + 45, y - 7, 4, 4);
+    /* rampa kapısı: turuncu ışık. Sayfadaki tek sıcak kaynak. */
+    var bx = x + 52, by = GY - 22;
+    octx.fillStyle = C.bayGlow; octx.fillRect(bx - 5, by - 4, 30, 26);
+    octx.fillStyle = C.out; octx.fillRect(bx - 1, by - 1, 22, 23);
+    octx.fillStyle = C.bay; octx.fillRect(bx, by, 20, 22);
+    octx.fillStyle = C.depoIn;
+    for (var v = 0; v < 4; v++) octx.fillRect(bx + 2, by + 3 + v * 5, 16, 1);
+    /* istiflenmiş koliler */
+    var pb = pal();
+    octx.fillStyle = C.out; octx.fillRect(x + 82, GY - 9, 10, 9); octx.fillRect(x + 93, GY - 7, 8, 7);
+    octx.fillStyle = pb.box; octx.fillRect(x + 83, GY - 8, 8, 8); octx.fillRect(x + 94, GY - 6, 6, 6);
+    octx.fillStyle = pb.tape; octx.fillRect(x + 83, GY - 5, 8, 1); octx.fillRect(x + 94, GY - 4, 6, 1);
+  }
+
+  function drawPole(x) {
+    octx.fillStyle = C.pole; octx.fillRect(x, GY - 17, 1, 17);
+    octx.fillRect(x, GY - 17, 4, 1);
+    octx.fillStyle = theme === 'light' ? '#c9cbcf' : '#3c3226';
+    octx.fillRect(x + 3, GY - 16, 2, 1);
+  }
+
+  function drawCab(i) {
+    var x = DOORX[i], y = GY - CAB_H;
+    octx.fillStyle = C.out; octx.fillRect(x - 1, y - 1, CAB_W + 2, CAB_H + 1);
+    octx.fillStyle = C.cab; octx.fillRect(x, y, CAB_W, CAB_H);
+    octx.fillStyle = C.cabIn; octx.fillRect(x + 2, y + 6, CAB_W - 4, 9);
+    octx.fillStyle = C.cabRack;
+    for (var v = 0; v < 3; v++) octx.fillRect(x + 4, y + 7 + v * 3, CAB_W - 8, 1);
+    /* kapı: kuryenin çaldığı yer */
+    octx.fillStyle = C.out; octx.fillRect(x + 2, y + 16, CAB_W - 4, CAB_H - 16);
+    octx.fillStyle = C.cabIn; octx.fillRect(x + 3, y + 17, CAB_W - 6, CAB_H - 18);
+    octx.fillStyle = C.cabRack; octx.fillRect(x + CAB_W - 5, y + 21, 1, 2);
+    /* durum şeridi: kapının üstünde tam genişlik — tek karelik lambadan okunaklı */
+    var k = lamps[i];
+    octx.fillStyle = lampColor(k);
+    octx.fillRect(x + 2, y + 2, CAB_W - 4, k === 'off' ? 1 : 2);
+  }
+
+  function drawCourier(c, t, L, sw) {
+    var e = t - c.t0, key = 'w0', face = 1, x = c.sx, prop = false, fx = false;
+    if (e < -0.45) return;
+    if (e < 0) {
+      prop = e > -0.45;
+    } else if (e < c.walk) {
+      x = c.sx + e * SPEED; key = WALK[Math.floor(e * 8) % 4]; prop = true;
+    } else if (e < c.walk + KNOCK) {
+      x = c.tx; key = (Math.floor((e - c.walk) * 5) % 2) ? 'k1' : 'k0'; prop = false; fx = true;
+    } else if (e < c.walk + KNOCK + GIVE) {
+      x = c.tx; key = 't1'; prop = false; fx = !c.fail;
+    } else if (c.fail) {
+      var fe = e - (c.walk + KNOCK + GIVE);
+      if (fe < 1.0) { x = c.tx; key = 'w0'; prop = false; }
+      else { face = -1; prop = true; x = c.tx - (fe - 1.0) * SPEED * 0.74; key = WALK[Math.floor(fe * 7) % 4]; }
+    } else {
+      var de = e - (c.walk + KNOCK + GIVE);
+      if (de < 0.55) { x = c.tx; key = 't1'; prop = false; fx = true; }
+      else if (c.d === 0) { x = c.tx; key = 'w0'; prop = false; }
+      else { face = -1; x = c.tx - (de - 0.55) * SPEED * 0.82; key = WALK[Math.floor(de * 8) % 4]; prop = false; }
+    }
+    if (x < L - 16 || x > L + sw + 16) return;
+    octx.drawImage(sprite(key, face, prop, fx), Math.round(x) + (face > 0 ? -10 : -12), GY - 15);
+  }
+
+  /* ================= durum ================= */
+  var lastNarr = '';
+  function story(t) {
+    var i, done = 0, failed = false;
+    for (i = 0; i < COUR.length; i++) {
+      var c = COUR[i], e = t - c.t0, k = 'off';
+      if (e >= c.walk + KNOCK) {
+        k = 'run';
+        if (e >= c.walk + KNOCK + GIVE) k = 'ok';
+        if (c.fail && e >= c.walk + KNOCK + GIVE + 0.35) k = 'err';
+        if (c.fail && e >= c.walk + KNOCK + GIVE + 1.0) k = 'rb';
+      }
+      lamps[i] = k;
+      if (k === 'ok') done++;
+      if (k === 'err' || k === 'rb') failed = true;
+      var lbl = k === 'run' ? 'kuruluyor' : k === 'ok' ? 'sağlıklı'
+        : k === 'err' ? 'sağlık kontrolü düştü' : k === 'rb' ? 'geri alındı · 4.9.1'
+        : (e >= 0 ? 'sırada' : 'bekliyor');
+      var lb = labs[i];
+      if (lb) {
+        if (lb.st !== k) { lb.el.setAttribute('data-st', k === 'off' ? '' : k); lb.st = k; }
+        if (lb.tx !== lbl) { lb.el.innerHTML = '<b>' + HOST[i] + '</b><s>' + lbl + '</s>'; lb.tx = lbl; }
+      }
+    }
+    var s = t < 1.15 ? 'yeni sürüm hazır · magaza-web 4.9.2'
+      : t < COUR[0].t0 + COUR[0].walk ? 'önce tek sunucu: web-01'
+      : t < COUR[0].t0 + COUR[0].walk + KNOCK + GIVE ? 'web-01 kuruluyor · sağlık kontrolü bekleniyor'
+      : t < T_WAVE ? 'web-01 sağlıklı · onay verildi, kalan sunuculara yayılıyor'
+      : failed ? 'api-01 sağlık kontrolünden geçemedi · eski sürüme döndü, yayılma durdu'
+      : 'kalan sunuculara yayılıyor · ' + done + '/' + COUR.length + ' sunucu güncel';
+    if (s !== lastNarr) { narrTxt.textContent = s; lastNarr = s; }
+    var ch = t < 3.0 ? 0 : t < 4.6 ? 1 : t < 12.4 ? 2 : 3;
+    for (i = 0; i < railLi.length; i++) {
+      var on = i === ch ? '1' : '0';
+      if (railLi[i].getAttribute('data-on') !== on) railLi[i].setAttribute('data-on', on);
+    }
+  }
+
+  /* ================= kare ================= */
+  var camLeft = 0, camTop = 0;
+  var p = 0, introP = 0, introT0 = 0, skipping = false, skipAt = 0, skipFrom = 0;
+  var lastBar = -1, lastHero = -1, lastCut = -1, lastSo = -1, lastHint = -1, lastSolid = '';
+
+  function render() {
+    if (!dispW || !dispH) return;
+    var ie = reduce ? 0 : sstep(introP);
+    var t = reduce ? STORY : Math.max(ie * BASE_T, BASE_T + p * (STORY - BASE_T));
+    if (t > STORY) t = STORY;
+    var pc = camAt(t);
+    var vw0 = lerp(ESTAB.vw, pc.vw, ie) * VWS;
+    var f = fit(vw0);
+    var vw = f.vw, vh = f.vh;
+    var cx = lerp(ESTAB.cx, pc.cx, ie);
+    var gf = lerp(ESTAB.gf, pc.gf, ie) - (dispH > dispW ? 0.05 : 0);
+
+    camLeft = cx - vw / 2;
+    camTop = GY - vh * gf;
+    var scale = dispW / vw;
+
+    story(t);
+
+    var iL = Math.floor(camLeft), iT = Math.floor(camTop);
+    var sw = Math.min(off.width, Math.ceil(vw) + 2), sh = Math.min(off.height, Math.ceil(vh) + 2);
+    var tod = sstep(clamp01((t - 1.5) / 7.5));
+    drawScene(iL, iT, sw, sh, t, tod);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, sw, sh,
+      -(camLeft - iL) * scale * dpr, -(camTop - iT) * scale * dpr,
+      sw * scale * dpr, sh * scale * dpr);
+
+    /* kapı etiketleri: dünya x → ekran x */
+    var wide = vw > 300 ? '1' : '0';
+    if (labelsEl.getAttribute('data-wide') !== wide) labelsEl.setAttribute('data-wide', wide);
+    for (var i = 0; i < labs.length; i++) {
+      var lb = labs[i], lx = (lb.wx - camLeft) * scale, ly = (lb.wy - camTop) * scale;
+      var vis = lx > -70 && lx < dispW + 70 && ly > 56 && ly < dispH - 8;
+      var op = vis ? (vw > 300 ? 0.75 : vw > 250 ? 0.5 : 1) : 0;
+      lb.el.style.transform = 'translate3d(calc(' + lx.toFixed(1) + 'px - 50%),' + ly.toFixed(1) + 'px,0)';
+      if (op !== lb.op) { lb.el.style.opacity = op; lb.op = op; }
+    }
+
+    if (reduce) return;
+
+    /* perde: açılışta açılır, kesmede kapanır */
+    var closing = sstep(clamp01((p - 0.86) / 0.13));
+    var bf = lerp(0.20, 0.075, ie);
+    bf = bf + (0.5 - bf) * closing;
+    if (Math.abs(bf - lastBar) > 0.0015) {
+      var ty = (-100 + bf * 200).toFixed(2);
+      barT.style.transform = 'translate3d(0,' + ty + '%,0)';
+      barB.style.transform = 'translate3d(0,' + (-ty) + '%,0)';
+      lastBar = bf;
+    }
+
+    /* kahraman metni sahneye yer açar */
+    var ho = 1 - sstep(clamp01((p - 0.035) / 0.115));
+    if (Math.abs(ho - lastHero) > 0.004) {
+      heroEl.style.opacity = ho;
+      heroEl.style.transform = 'translate3d(0,' + (-(1 - ho) * 2.4).toFixed(2) + 'vh,0)';
+      heroEl.style.visibility = ho < 0.04 ? 'hidden' : '';
+      scrim2.style.opacity = ho;
+      lastHero = ho;
+    }
+    var so = (1 - ho) * (1 - closing);
+    if (Math.abs(so - lastSo) > 0.004) { narrEl.style.opacity = so; railEl.style.opacity = so; lastSo = so; }
+    var hi = ie * (1 - sstep(clamp01(p / 0.02)));
+    if (Math.abs(hi - lastHint) > 0.004) { hintEl.style.opacity = hi; lastHint = hi; }
+
+    /* kesme: perde tam kapandığında ürün ekranı geçişsiz açılır */
+    var cutOn = p >= 0.995 ? 1 : 0;
+    if (cutOn !== lastCut) {
+      cutEl.style.opacity = cutOn;
+      cutEl.style.pointerEvents = cutOn ? '' : 'none';
+      if (cutOn) cutEl.classList.add('seen');
+      lastCut = cutOn;
+    }
+  }
+
+  /* ================= kaydırma ================= */
+  var pend = false, visible = true;
+  function need() { if (!pend && visible) { pend = true; requestAnimationFrame(tick); } }
+  function tick(ts) {
+    pend = false;
+    if (reduce) { introP = 1; render(); return; }
+    if (!introT0) introT0 = ts;
+    if (skipping) {
+      var k = clamp01((ts - skipAt) / 220);
+      introP = skipFrom + (1 - skipFrom) * sstep(k);
+      if (k >= 1) { skipping = false; introT0 = ts - 2400; introP = 1; }
+    } else introP = clamp01((ts - introT0) / 2400);
+    render();
+    if (introP < 1 || skipping) need();
+  }
+  function skipIntro() {
+    if (reduce || introP >= 1 || skipping) return;
+    skipping = true; skipAt = performance.now(); skipFrom = introP;
+    need();
+  }
+  function onScroll() {
+    /* kendi yolculuğumuz değilse kullanıcı kaydırıyordur: kontrolü ona bırak */
+    if (trip && Math.abs(window.scrollY - expectY) > 4) stopTrip();
+    updateActive();
+    var solid = window.scrollY > 40 ? '1' : '0';
+    if (solid !== lastSolid) { navEl.setAttribute('data-solid', solid); lastSolid = solid; }
+    if (reduce) return;
+    var r = wrapEl.getBoundingClientRect();
+    var span = Math.max(1, r.height - window.innerHeight);
+    var np = clamp01(-r.top / span);
+    if (np > 0.0008) skipIntro();
+    if (Math.abs(np - p) > 0.0004) { p = np; need(); }
+  }
+
+  /* ================= kurulum ================= */
+  function applyTheme(t) {
+    theme = t;
+    root.setAttribute('data-theme', t);
+    themeBtn.setAttribute('aria-pressed', t === 'light' ? 'true' : 'false');
+    themeTxt.textContent = t === 'light' ? 'koyu tema' : 'açık tema';
+    buildColors();
+    need();
+  }
+
+  function configure() {
+    if (reduce) {
+      root.classList.remove('cin');
+      barT.style.transform = ''; barB.style.transform = '';
+      heroEl.style.opacity = ''; heroEl.style.transform = ''; heroEl.style.visibility = ''; scrim2.style.opacity = '';
+      narrEl.style.opacity = ''; railEl.style.opacity = ''; hintEl.style.opacity = '';
+      cutEl.style.opacity = ''; cutEl.style.pointerEvents = '';
+      lastBar = lastHero = lastCut = lastSo = lastHint = -1;
+      introP = 1;
+    } else {
+      root.classList.add('cin');
+      introT0 = 0; introP = 0; skipping = false;
+      lastBar = lastHero = lastCut = lastSo = lastHint = -1;
+    }
+    /* düzen sınıf değişiminden sonra ölçülmeli */
+    requestAnimationFrame(function () {
+      layout();
+      onScroll();
+      need();
+    });
+  }
+
+  applyTheme(saved === 'light' ? 'light' : 'dark');
+  themeBtn.addEventListener('click', function () {
+    var n = theme === 'light' ? 'dark' : 'light';
+    applyTheme(n);
+    try { localStorage.setItem('sevkit-tema', n); } catch (e) {}
+  });
+
+  window.addEventListener('scroll', onScroll, { passive: true });
+  var SCROLLKEYS = ['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', ' ', 'End', 'Home'];
+  ['wheel', 'touchstart', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, function (e) {
+      if (ev === 'keydown' && SCROLLKEYS.indexOf(e.key) < 0) return;
+      stopTrip();
+      skipIntro();
+    }, { passive: true });
+  });
+
+  /* ================= menü yolculuğu ================= */
+  var wipeEl = document.getElementById('wipe');
+  var cineEl = document.getElementById('cine');
+  var trip = false, tripRaf = 0, expectY = -1, wipeT1 = 0, wipeT2 = 0;
+
+  function maxY() { return Math.max(0, document.documentElement.scrollHeight - window.innerHeight); }
+  function yOf(el) { return el ? Math.min(maxY(), Math.max(0, Math.round(el.getBoundingClientRect().top + window.scrollY))) : 0; }
+  function sceneEnd() { return wrapEl.getBoundingClientRect().top + window.scrollY + Math.max(1, wrapEl.offsetHeight - window.innerHeight); }
+
+  function stopTrip() {
+    if (tripRaf) { cancelAnimationFrame(tripRaf); tripRaf = 0; }
+    trip = false;
+    if (wipeT1) { clearTimeout(wipeT1); wipeT1 = 0; }
+    if (wipeT2) { clearTimeout(wipeT2); wipeT2 = 0; }
+    wipeEl.className = 'wipe';
+  }
+
+  function land(el) {
+    if (!el) return;
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+    try { el.focus({ preventScroll: true }); } catch (e2) { el.focus(); }
+    updateActive();
+  }
+
+  /* sahne içi yolculuk: kaydırma konumu taşınır, kamera yol alır.
+     Eğri hızlı başlar, yavaş biter (easeOutCubic); süre mesafeye göre 700–1100 ms. */
+  function travel(toY, el) {
+    stopTrip();
+    var fromY = window.scrollY, d = toY - fromY;
+    if (Math.abs(d) < 3) { land(el); return; }
+    var dur = Math.min(1100, Math.max(700, 640 + Math.abs(d) * 0.18));
+    var t0 = performance.now();
+    trip = true;
+    (function step(ts) {
+      if (!trip) return;
+      var k = Math.min(1, ((ts || performance.now()) - t0) / dur);
+      var u = 1 - Math.pow(1 - k, 3);
+      expectY = Math.round(fromY + d * u);
+      window.scrollTo(0, expectY);
+      if (k < 1) tripRaf = requestAnimationFrame(step);
+      else { trip = false; tripRaf = 0; land(el); }
+    })(t0);
+  }
+
+  /* sahneden çıkış: perde kapanır (200 ms), kesme, perde açılır (225 ms) */
+  function exitScene(toY, el) {
+    stopTrip();
+    wipeEl.className = 'wipe on close';
+    wipeT1 = setTimeout(function () {
+      wipeT1 = 0;
+      expectY = toY;
+      window.scrollTo(0, toY);
+      void wipeEl.offsetHeight;
+      wipeEl.className = 'wipe on open';
+      land(el);
+      wipeT2 = setTimeout(function () { wipeT2 = 0; wipeEl.className = 'wipe'; }, 235);
+    }, 200);
+  }
+
+  function goTo(el, forceY) {
+    skipIntro();
+    var toY = typeof forceY === 'number' ? Math.min(maxY(), Math.max(0, forceY)) : yOf(el);
+    if (reduce) { stopTrip(); window.scrollTo(0, toY); expectY = toY; land(el); return; }
+    var end = root.classList.contains('cin') ? sceneEnd() : 0;
+    var inScene = toY < end - 2;                 /* hedef hâlâ sahnenin içinde */
+    var here = window.scrollY < end - 2;         /* şu an sahnedeyiz */
+    if (!inScene && here) exitScene(toY, el);
+    else travel(toY, el);
+  }
+
+  var navA = [], secList = [];
+  (function bindNav() {
+    var links = document.querySelectorAll('.nav__links a[href^="#"], .cta a[href^="#"]');
+    for (var i = 0; i < links.length; i++) {
+      (function (a) {
+        var id = a.getAttribute('href').slice(1);
+        var el = id ? document.getElementById(id) : null;
+        if (!el) return;
+        if (a.parentNode.className === 'nav__links') { navA.push(a); secList.push(el); }
+        a.addEventListener('click', function (ev) { ev.preventDefault(); goTo(el); });
+      })(links[i]);
+    }
+    var brand = document.getElementById('brand');
+    if (brand) brand.addEventListener('click', function (ev) { ev.preventDefault(); goTo(cineEl, 0); });
+  })();
+
+  var lastActive = -2;
+  function updateActive() {
+    var y = window.scrollY + 140, best = -1, i;
+    for (i = 0; i < secList.length; i++) if (y >= secList[i].getBoundingClientRect().top + window.scrollY) best = i;
+    if (best === lastActive) return;
+    lastActive = best;
+    for (i = 0; i < navA.length; i++) {
+      if (i === best) navA[i].setAttribute('aria-current', 'true');
+      else navA[i].removeAttribute('aria-current');
+    }
+  }
+
+  var rt = 0;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { layout(); onScroll(); need(); }, 140);
+  }, { passive: true });
+
+  var vio = new IntersectionObserver(function (es) {
+    visible = es[0].isIntersecting;
+    if (visible) need();
+  }, { threshold: 0 });
+  vio.observe(stageEl);
+
+  /* "hareketi azalt" yükleme sonrası değişirse sayfa boş kalmasın: baştan kur. */
+  if (mqR.addEventListener) mqR.addEventListener('change', function (e) { reduce = e.matches; configure(); });
+  else if (mqR.addListener) mqR.addListener(function (e) { reduce = e.matches; configure(); });
+
+  configure();
+
+  /* ---------- kaydırmayla ortaya çıkış (view() desteklenmiyorsa) ---------- */
+  if (!(window.CSS && CSS.supports && CSS.supports('animation-timeline', 'view()'))) {
+    root.classList.add('io');
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (x) { if (x.isIntersecting) { x.target.classList.add('in'); io.unobserve(x.target); } });
+    }, { rootMargin: '0px 0px -10% 0px', threshold: 0.08 });
+    var rvs = document.querySelectorAll('.rv');
+    for (var ri = 0; ri < rvs.length; ri++) io.observe(rvs[ri]);
+  }
+  /* veritabanı farkı: satırlar sıralanır, geri alma anı bir kez oynar */
+  var dvEl = document.getElementById('dv');
+  if (dvEl) {
+    var dio = new IntersectionObserver(function (es) {
+      if (!es[0].isIntersecting) return;
+      dio.disconnect();
+      dvEl.classList.add('play');
+      if (reduce) dvEl.classList.add('done');
+      else setTimeout(function () { dvEl.classList.add('done'); }, 1150);
+    }, { rootMargin: '0px 0px -12% 0px', threshold: 0 });
+    dio.observe(dvEl);
+  }
+
+  /* mühür damgası: kesme dışında da (azaltılmış hareket / doğrudan bağlantı) görünür kalsın */
+  var cio = new IntersectionObserver(function (es) {
+    if (es[0].isIntersecting) { cutEl.classList.add('seen'); cio.disconnect(); }
+  }, { threshold: 0.25 });
+  cio.observe(cutEl);
+
+  /* ---------- indirme sekmeleri ---------- */
+  var tabs = [document.getElementById('tab-win'), document.getElementById('tab-lin')];
+  function selectTab(n, focus) {
+    tabs.forEach(function (tb, i) {
+      var on = i === n;
+      tb.setAttribute('aria-selected', on ? 'true' : 'false');
+      tb.tabIndex = on ? 0 : -1;
+      document.getElementById(tb.getAttribute('aria-controls')).hidden = !on;
+      if (on && focus) tb.focus();
+    });
+  }
+  tabs.forEach(function (tb, i) {
+    tb.addEventListener('click', function () { selectTab(i, false); });
+    tb.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); selectTab(i === 0 ? 1 : 0, true); }
+    });
+  });
+
+  /* ---------- komut kopyala ---------- */
+  var cps = document.querySelectorAll('.copy');
+  for (var k2 = 0; k2 < cps.length; k2++) {
+    cps[k2].addEventListener('click', function () {
+      var btn = this, code = btn.parentNode.querySelector('code');
+      var done = function () { btn.textContent = 'kopyalandı'; setTimeout(function () { btn.textContent = 'kopyala'; }, 1600); };
+      if (navigator.clipboard) navigator.clipboard.writeText(code.textContent).then(done, function () {});
+      else done();
+    });
+  }
+
+
+
+
+
+})();
+</script>
+</body>
+</html>
