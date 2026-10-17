@@ -1,5 +1,9 @@
 # sevkit-landing
 
+### 👉 [Siteyi aç: berksam.github.io/sevkit-landing](https://berksam.github.io/sevkit-landing/)
+
+Canlı demo: [berksam.github.io/sevkit-landing/demo/sevkit-demo.html](https://berksam.github.io/sevkit-landing/demo/sevkit-demo.html) (giriş: `demo` / `demo`)
+
 Sevkit'in tanıtım sayfası ve gezilebilir demosu. GitHub Pages ile yayınlanır.
 
 - `index.html` — tanıtım sayfası (tek dosya, kütüphane yok, yalnız Google Fonts).
